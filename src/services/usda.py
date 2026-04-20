@@ -30,12 +30,12 @@ _NUTRIENT_ID_MAP: dict[int, str] = {
 def _api_key() -> str:
     key = os.getenv("USDA_API_KEY", "")
     if not key:
-        raise EnvironmentError("USDA_API_KEY が .env に設定されていません。")
+        raise EnvironmentError("USDA_API_KEY is not set in .env.")
     return key
 
 
 def search_foods(query: str, page_size: int = 20) -> list[dict[str, Any]]:
-    """食材名で検索し、候補リストを返す。各要素は {fdc_id, description} を含む。"""
+    """Search foods and return deduplicated candidates with {fdc_id, description, data_type}."""
     resp = requests.get(
         f"{_BASE_URL}/foods/search",
         params={
@@ -48,11 +48,23 @@ def search_foods(query: str, page_size: int = 20) -> list[dict[str, Any]]:
     )
     resp.raise_for_status()
     foods = resp.json().get("foods", [])
-    return [{"fdc_id": f["fdcId"], "description": f["description"]} for f in foods]
+
+    seen: set[str] = set()
+    results: list[dict[str, Any]] = []
+    for f in foods:
+        desc = f["description"].strip()
+        if desc not in seen:
+            seen.add(desc)
+            results.append({
+                "fdc_id": f["fdcId"],
+                "description": desc,
+                "data_type": f.get("dataType", ""),
+            })
+    return results
 
 
-def get_nutrients_per_100g(fdc_id: int) -> dict[str, float]:
-    """指定した fdcId の食材の栄養素を per 100g で返す。キーは snake_case + 単位サフィックス。"""
+def get_food_detail(fdc_id: int) -> dict[str, Any]:
+    """Return nutrients per 100g and serving size info for a given fdcId."""
     resp = requests.get(
         f"{_BASE_URL}/food/{fdc_id}",
         params={"api_key": _api_key()},
@@ -63,18 +75,41 @@ def get_nutrients_per_100g(fdc_id: int) -> dict[str, float]:
 
     nutrients: dict[str, float] = {}
     for n in data.get("foodNutrients", []):
-        # Foundation/SR Legacy: {"nutrient": {"id": ...}, "amount": ...}
-        # Branded:              {"nutrientId": ..., "value": ...}
         nutrient_id = (n.get("nutrient") or {}).get("id") or n.get("nutrientId")
         amount = n.get("amount") if n.get("amount") is not None else n.get("value") or 0.0
         key = _NUTRIENT_ID_MAP.get(int(nutrient_id)) if nutrient_id else None
         if key and amount:
             nutrients[key] = round(float(amount), 4)
 
-    return nutrients
+    # Serving size: Branded foods expose servingSize directly;
+    # Foundation/SR Legacy expose foodPortions list.
+    serving_g: float | None = None
+    serving_label: str = ""
+    if data.get("servingSize"):
+        unit = data.get("servingSizeUnit", "g").lower()
+        size = float(data["servingSize"])
+        serving_g = size * 29.5735 if unit == "ml" else size
+        serving_label = f"1 serving ({serving_g:.0f}g)"
+    elif data.get("foodPortions"):
+        portion = data["foodPortions"][0]
+        serving_g = float(portion.get("gramWeight", 0)) or None
+        if serving_g:
+            desc = portion.get("modifier") or portion.get("measureUnit", {}).get("name", "serving")
+            amount_val = portion.get("amount", 1)
+            serving_label = f"{amount_val} {desc} ({serving_g:.0f}g)"
+
+    return {
+        "nutrients_per_100g": nutrients,
+        "serving_g": serving_g,
+        "serving_label": serving_label,
+    }
+
+
+def get_nutrients_per_100g(fdc_id: int) -> dict[str, float]:
+    return get_food_detail(fdc_id)["nutrients_per_100g"]
 
 
 def scale_nutrients(nutrients_per_100g: dict[str, float], grams: float) -> dict[str, float]:
-    """per 100g の栄養素を実際の摂取グラム数でスケールする。"""
+    """Scale per-100g nutrients to actual intake grams."""
     factor = grams / 100
     return {k: round(v * factor, 4) for k, v in nutrients_per_100g.items()}
