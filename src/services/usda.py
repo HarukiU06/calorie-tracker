@@ -41,7 +41,7 @@ def search_foods(query: str, page_size: int = 20) -> list[dict[str, Any]]:
         params={
             "query": query,
             "pageSize": page_size,
-            "dataType": "Foundation,SR Legacy",
+            "dataType": "Foundation,SR Legacy,Branded",
             "api_key": _api_key(),
         },
         timeout=10,
@@ -63,10 +63,12 @@ def get_nutrients_per_100g(fdc_id: int) -> dict[str, float]:
 
     nutrients: dict[str, float] = {}
     for n in data.get("foodNutrients", []):
-        nutrient_id = n.get("nutrient", {}).get("id") or n.get("nutrientId")
-        amount = n.get("amount") or n.get("value") or 0.0
-        key = _NUTRIENT_ID_MAP.get(nutrient_id)
-        if key:
+        # Foundation/SR Legacy: {"nutrient": {"id": ...}, "amount": ...}
+        # Branded:              {"nutrientId": ..., "value": ...}
+        nutrient_id = (n.get("nutrient") or {}).get("id") or n.get("nutrientId")
+        amount = n.get("amount") if n.get("amount") is not None else n.get("value") or 0.0
+        key = _NUTRIENT_ID_MAP.get(int(nutrient_id)) if nutrient_id else None
+        if key and amount:
             nutrients[key] = round(float(amount), 4)
 
     return nutrients
