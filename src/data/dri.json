@@ -1,0 +1,34 @@
+{
+  "_comment": "Dietary Reference Intakes (DRI) — RDA/AI per day. Source: NIH/NAM 2020.",
+  "default": {
+    "protein_g": 50,
+    "fat_g": 65,
+    "carb_g": 275,
+    "fiber_g": 28,
+    "sodium_mg": 2300,
+    "potassium_mg": 4700,
+    "calcium_mg": 1000,
+    "iron_mg": 8,
+    "magnesium_mg": 400,
+    "zinc_mg": 11,
+    "vitamin_c_mg": 90,
+    "vitamin_d_ug": 20,
+    "vitamin_b12_ug": 2.4,
+    "folate_ug": 400,
+    "vitamin_a_ug": 900
+  },
+  "overrides": {
+    "female": {
+      "iron_mg": 18,
+      "magnesium_mg": 310,
+      "zinc_mg": 8,
+      "vitamin_a_ug": 700,
+      "vitamin_c_mg": 75
+    },
+    "age_51_plus": {
+      "calcium_mg": 1200,
+      "vitamin_d_ug": 20,
+      "vitamin_b12_ug": 2.4
+    }
+  }
+}
