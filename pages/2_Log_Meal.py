@@ -7,20 +7,20 @@ from src.db.database import get_session
 from src.db.models import MealEntry, MealType
 from src.services.usda import get_nutrients_per_100g, scale_nutrients, search_foods
 
-st.title("🍽️ 食事ログ")
+st.title("Log Meal")
 
 MEAL_LABELS = {
-    MealType.BREAKFAST: "朝食",
-    MealType.LUNCH: "昼食",
-    MealType.DINNER: "夕食",
-    MealType.SNACK: "間食",
+    MealType.BREAKFAST: "Breakfast",
+    MealType.LUNCH: "Lunch",
+    MealType.DINNER: "Dinner",
+    MealType.SNACK: "Snack",
 }
 
-log_date = st.date_input("日付", value=datetime.date.today())
+log_date = st.date_input("Date", value=datetime.date.today())
 
-st.subheader("食材を検索して追加")
+st.subheader("Search and add food")
 
-query = st.text_input("食材名を入力 (英語推奨)", placeholder="e.g. chicken breast")
+query = st.text_input("Food name", placeholder="e.g. chicken breast")
 
 if "search_results" not in st.session_state:
     st.session_state.search_results = []
@@ -29,29 +29,29 @@ if "selected_nutrients" not in st.session_state:
 if "selected_food_name" not in st.session_state:
     st.session_state.selected_food_name = ""
 
-if st.button("検索") and query:
-    with st.spinner("検索中..."):
+if st.button("Search") and query:
+    with st.spinner("Searching..."):
         try:
             results = search_foods(query)
             st.session_state.search_results = results
             st.session_state.selected_nutrients = {}
         except Exception as e:
-            st.error(f"検索エラー: {e}")
+            st.error(f"Search error: {e}")
 
 if st.session_state.search_results:
     options = {f"{r['description']} (id:{r['fdc_id']})": r for r in st.session_state.search_results}
-    chosen_label = st.selectbox("検索結果", list(options.keys()))
+    chosen_label = st.selectbox("Results", list(options.keys()))
     chosen = options[chosen_label]
 
     col1, col2 = st.columns([1, 2])
     with col1:
-        if st.button("栄養素を取得"):
-            with st.spinner("取得中..."):
+        if st.button("Fetch nutrients"):
+            with st.spinner("Fetching..."):
                 try:
                     st.session_state.selected_nutrients = get_nutrients_per_100g(chosen["fdc_id"])
                     st.session_state.selected_food_name = chosen["description"]
                 except Exception as e:
-                    st.error(f"取得エラー: {e}")
+                    st.error(f"Fetch error: {e}")
 
     if st.session_state.selected_nutrients:
         st.write(f"**{st.session_state.selected_food_name}** (per 100g)")
@@ -63,12 +63,12 @@ if st.session_state.search_results:
 
         with st.form("log_form"):
             meal_type = st.selectbox(
-                "食事区分",
+                "Meal type",
                 options=list(MEAL_LABELS.keys()),
                 format_func=lambda x: MEAL_LABELS[x],
             )
-            grams = st.number_input("グラム数", min_value=1.0, max_value=2000.0, value=100.0, step=1.0)
-            log_submitted = st.form_submit_button("ログに追加", type="primary")
+            grams = st.number_input("Grams", min_value=1.0, max_value=2000.0, value=100.0, step=1.0)
+            log_submitted = st.form_submit_button("Add to log", type="primary")
 
         if log_submitted:
             scaled = scale_nutrients(st.session_state.selected_nutrients, grams)
@@ -82,13 +82,13 @@ if st.session_state.search_results:
             with get_session() as session:
                 session.add(entry)
                 session.commit()
-            st.success(f"「{st.session_state.selected_food_name}」を追加しました。")
+            st.success(f"Added: {st.session_state.selected_food_name}")
             st.session_state.search_results = []
             st.session_state.selected_nutrients = {}
             st.rerun()
 
 st.divider()
-st.subheader(f"📋 {log_date} の食事記録")
+st.subheader(f"Meal log — {log_date}")
 
 with get_session() as session:
     entries = session.execute(
@@ -96,7 +96,7 @@ with get_session() as session:
     ).scalars().all()
 
 if not entries:
-    st.info("まだ記録がありません。")
+    st.info("No entries yet.")
 else:
     for entry in entries:
         with st.expander(f"{MEAL_LABELS.get(entry.meal_type, entry.meal_type)} — {entry.food_name} ({entry.grams}g)"):
@@ -104,9 +104,9 @@ else:
             protein = entry.nutrients.get("protein_g", 0)
             fat = entry.nutrients.get("fat_g", 0)
             carb = entry.nutrients.get("carb_g", 0)
-            st.write(f"エネルギー: **{kcal:.1f} kcal** | タンパク質: {protein:.1f}g | 脂質: {fat:.1f}g | 炭水化物: {carb:.1f}g")
+            st.write(f"Energy: **{kcal:.1f} kcal** | Protein: {protein:.1f}g | Fat: {fat:.1f}g | Carbs: {carb:.1f}g")
 
-            if st.button("削除", key=f"del_{entry.id}"):
+            if st.button("Delete", key=f"del_{entry.id}"):
                 with get_session() as session:
                     e = session.get(MealEntry, entry.id)
                     if e:

@@ -11,4 +11,4 @@ st.set_page_config(
 )
 
 st.title("🥗 Calorie Tracker")
-st.write("サイドバーからページを選択してください。")
+st.write("Select a page from the sidebar.")
