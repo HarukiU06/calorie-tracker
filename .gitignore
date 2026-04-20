@@ -46,3 +46,6 @@ htmlcov/
 
 # Ruff cache
 .ruff_cache/
+
+# Claude Code
+CLAUDE.md
