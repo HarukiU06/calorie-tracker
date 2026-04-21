@@ -8,7 +8,9 @@ from src.db.models import MealEntry, MealType
 from src.services.usda import get_food_detail, scale_nutrients, search_foods
 from src.ui.sidebar import render_sidebar
 
-st.set_page_config(page_title="Log Meal", page_icon="🍽️", layout="wide")
+st.set_page_config(page_title="Log Meal", layout="wide")
+from src.ui.css import inject_css
+inject_css()
 render_sidebar()
 
 st.title("Log Meal")

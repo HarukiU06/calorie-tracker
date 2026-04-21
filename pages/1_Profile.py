@@ -5,7 +5,9 @@ from src.db.models import ActivityLevel, Gender, Goal, Profile
 from src.services.bmr import calc_bmr, calc_calorie_target, calc_tdee
 from src.ui.sidebar import render_sidebar
 
-st.set_page_config(page_title="Profile", page_icon="👤", layout="wide")
+st.set_page_config(page_title="Profile", layout="wide")
+from src.ui.css import inject_css
+inject_css()
 render_sidebar()
 
 st.title("Profile")

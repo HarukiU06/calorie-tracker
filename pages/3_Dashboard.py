@@ -8,7 +8,9 @@ from src.db.database import get_session
 from src.db.models import MealEntry, Profile
 from src.ui.sidebar import render_sidebar
 
-st.set_page_config(page_title="Dashboard", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Dashboard", layout="wide")
+from src.ui.css import inject_css
+inject_css()
 render_sidebar()
 from src.services.bmr import calc_calorie_target
 from src.services.dri import get_dri

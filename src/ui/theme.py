@@ -1,0 +1,7 @@
+BG = "#f7f5f0"
+BG_ALT = "#efece4"
+INK = "#2a251f"
+MUTED = "#7a6f63"
+RULE = "#e4dfd4"
+RULE_STRONG = "#d8d1c3"
+ACCENT = "#c96442"
