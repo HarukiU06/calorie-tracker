@@ -28,86 +28,108 @@ log_date = st.date_input("Date", value=datetime.date.today())
 
 st.subheader("Search and add food")
 
-query = st.text_input("Food name", placeholder="e.g. egg, chicken breast, banana")
-
-if "search_results" not in st.session_state:
-    st.session_state.search_results = []
-if "food_detail" not in st.session_state:
-    st.session_state.food_detail = {}
-if "selected_food_name" not in st.session_state:
-    st.session_state.selected_food_name = ""
-
-if st.button("Search") and query:
-    with st.spinner("Searching..."):
+# --- real-time suggest ---
+def _do_search(q: str) -> None:
+    if len(q) >= 2 and q != st.session_state.get("last_query"):
         try:
-            st.session_state.search_results = search_foods(query)
+            st.session_state.search_results = search_foods(q)
+            st.session_state.last_query = q
             st.session_state.food_detail = {}
+            st.session_state.selected_food_name = ""
         except Exception as e:
             st.error(f"Search error: {e}")
 
-if st.session_state.search_results:
-    options = {r["description"]: r for r in st.session_state.search_results}
-    chosen_label = st.selectbox("Results", list(options.keys()))
+
+query = st.text_input(
+    "Food name",
+    placeholder="Type at least 2 characters — e.g. egg, banana, chicken",
+    key="food_query",
+    on_change=lambda: _do_search(st.session_state.food_query),
+)
+
+if len(query) >= 2:
+    _do_search(query)
+
+# --- food selector ---
+results: list = st.session_state.get("search_results", [])
+food_detail: dict = st.session_state.get("food_detail", {})
+
+if results:
+    options = {r["description"]: r for r in results}
+    prev_selection = st.session_state.get("selected_food_name", "")
+    prev_index = list(options.keys()).index(prev_selection) if prev_selection in options else 0
+
+    chosen_label = st.selectbox(
+        f"Suggestions ({len(results)} found)",
+        list(options.keys()),
+        index=prev_index,
+        key="food_select",
+    )
     chosen = options[chosen_label]
 
-    if st.button("Fetch nutrients"):
-        with st.spinner("Fetching..."):
+    # Auto-fetch when selection changes
+    if chosen_label != st.session_state.get("selected_food_name"):
+        with st.spinner("Fetching nutrients..."):
             try:
                 st.session_state.food_detail = get_food_detail(chosen["fdc_id"])
-                st.session_state.selected_food_name = chosen["description"]
+                st.session_state.selected_food_name = chosen_label
+                food_detail = st.session_state.food_detail
             except Exception as e:
                 st.error(f"Fetch error: {e}")
 
-    detail = st.session_state.food_detail
-    if detail:
-        nutrients_100g = detail["nutrients_per_100g"]
-        serving_g: float | None = detail.get("serving_g")
-        serving_label: str = detail.get("serving_label", "")
+# --- portion input + log form ---
+if food_detail:
+    nutrients_100g: dict = food_detail["nutrients_per_100g"]
+    portions: list = food_detail.get("portions", [])
 
-        st.write(f"**{st.session_state.selected_food_name}** — per 100g")
-        cols = st.columns(len(NUTRIENT_DISPLAY))
-        for col, (key, label, unit) in zip(cols, NUTRIENT_DISPLAY):
-            val = nutrients_100g.get(key, 0)
-            col.metric(label, f"{val:.1f} {unit}")
+    st.write(f"**{st.session_state.selected_food_name}** — per 100g")
+    cols = st.columns(len(NUTRIENT_DISPLAY))
+    for col, (key, label, unit) in zip(cols, NUTRIENT_DISPLAY):
+        col.metric(label, f"{nutrients_100g.get(key, 0):.1f} {unit}")
 
-        with st.form("log_form"):
-            meal_type = st.selectbox(
-                "Meal type",
-                options=list(MEAL_LABELS.keys()),
-                format_func=lambda x: MEAL_LABELS[x],
-            )
+    with st.form("log_form"):
+        meal_type = st.selectbox(
+            "Meal type",
+            options=list(MEAL_LABELS.keys()),
+            format_func=lambda x: MEAL_LABELS[x],
+        )
 
-            input_mode_options = ["Grams"]
-            if serving_g:
-                input_mode_options.append(f"Servings ({serving_label})")
-            input_mode = st.radio("Input by", input_mode_options, horizontal=True)
+        portion_labels = [p["label"] for p in portions]
+        if portion_labels:
+            mode_options = ["Grams"] + portion_labels
+            input_mode = st.radio("Input by", mode_options, horizontal=True)
+        else:
+            input_mode = "Grams"
 
-            if input_mode == "Grams":
-                grams = st.number_input("Grams", min_value=1.0, max_value=2000.0, value=100.0, step=1.0)
-            else:
-                pieces = st.number_input("Number of servings", min_value=0.5, max_value=50.0, value=1.0, step=0.5)
-                grams = pieces * serving_g  # type: ignore[operator]
-                st.caption(f"= {grams:.0f}g")
+        if input_mode == "Grams":
+            grams = st.number_input("Grams", min_value=1.0, max_value=2000.0, value=100.0, step=1.0)
+        else:
+            selected_portion = next(p for p in portions if p["label"] == input_mode)
+            count = st.number_input("Count", min_value=0.5, max_value=50.0, value=1.0, step=0.5)
+            grams = count * selected_portion["grams"]
+            st.caption(f"= {grams:.0f}g")
 
-            log_submitted = st.form_submit_button("Add to log", type="primary")
+        log_submitted = st.form_submit_button("Add to log", type="primary")
 
-        if log_submitted:
-            scaled = scale_nutrients(nutrients_100g, grams)
-            entry = MealEntry(
-                date=log_date,
-                meal_type=meal_type,
-                food_name=st.session_state.selected_food_name,
-                grams=round(grams, 1),
-                nutrients=scaled,
-            )
-            with get_session() as session:
-                session.add(entry)
-                session.commit()
-            st.success(f"Added: {st.session_state.selected_food_name} ({grams:.0f}g)")
-            st.session_state.search_results = []
-            st.session_state.food_detail = {}
-            st.rerun()
+    if log_submitted:
+        scaled = scale_nutrients(nutrients_100g, grams)
+        entry = MealEntry(
+            date=log_date,
+            meal_type=meal_type,
+            food_name=st.session_state.selected_food_name,
+            grams=round(grams, 1),
+            nutrients=scaled,
+        )
+        with get_session() as session:
+            session.add(entry)
+            session.commit()
+        st.success(f"Added: {st.session_state.selected_food_name} ({grams:.0f}g)")
+        st.session_state.search_results = []
+        st.session_state.food_detail = {}
+        st.session_state.last_query = ""
+        st.rerun()
 
+# --- daily log ---
 st.divider()
 st.subheader(f"Meal log — {log_date}")
 
@@ -127,8 +149,7 @@ else:
         ):
             cols = st.columns(len(NUTRIENT_DISPLAY))
             for col, (key, label, unit) in zip(cols, NUTRIENT_DISPLAY):
-                val = entry.nutrients.get(key, 0)
-                col.metric(label, f"{val:.1f} {unit}")
+                col.metric(label, f"{entry.nutrients.get(key, 0):.1f} {unit}")
 
             if st.button("Delete", key=f"del_{entry.id}"):
                 with get_session() as session:

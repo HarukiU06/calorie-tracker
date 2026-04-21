@@ -26,6 +26,12 @@ _NUTRIENT_ID_MAP: dict[int, str] = {
     1092: "potassium_mg",
 }
 
+# Volumetric/non-piece units to deprioritize
+_VOLUME_KEYWORDS = {"tbsp", "tsp", "tablespoon", "teaspoon", "cup", "ml", "fl", "oz", "slice", "pat"}
+
+# Keywords that suggest a countable whole item
+_PIECE_KEYWORDS = {"large", "medium", "small", "extra", "whole", "each", "piece", "item"}
+
 
 def _api_key() -> str:
     key = os.getenv("USDA_API_KEY", "")
@@ -35,7 +41,7 @@ def _api_key() -> str:
 
 
 def search_foods(query: str, page_size: int = 20) -> list[dict[str, Any]]:
-    """Search foods and return deduplicated candidates with {fdc_id, description, data_type}."""
+    """Search foods and return deduplicated candidates."""
     resp = requests.get(
         f"{_BASE_URL}/foods/search",
         params={
@@ -63,8 +69,50 @@ def search_foods(query: str, page_size: int = 20) -> list[dict[str, Any]]:
     return results
 
 
+def _extract_portions(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return a list of {label, grams} portion options, prioritizing whole-item sizes."""
+    portions: list[dict[str, Any]] = []
+
+    # Foundation / SR Legacy — foodPortions list
+    for p in data.get("foodPortions", []):
+        gram_weight = float(p.get("gramWeight") or 0)
+        if gram_weight <= 0:
+            continue
+        modifier: str = (p.get("modifier") or "").lower()
+        unit_name: str = (p.get("measureUnit", {}) or {}).get("name", "").lower()
+        amount = p.get("amount", 1)
+        combined = f"{modifier} {unit_name}".strip()
+
+        # Skip volumetric measures
+        if any(kw in combined for kw in _VOLUME_KEYWORDS):
+            continue
+
+        # Build label
+        if modifier:
+            label = f"{amount} {modifier} ({gram_weight:.0f}g)"
+        elif unit_name and unit_name != "undetermined":
+            label = f"{amount} {unit_name} ({gram_weight:.0f}g)"
+        else:
+            label = f"{amount} piece ({gram_weight:.0f}g)"
+
+        is_piece = any(kw in combined for kw in _PIECE_KEYWORDS)
+        portions.append({"label": label, "grams": gram_weight, "is_piece": is_piece})
+
+    # Branded — single servingSize field
+    if not portions and data.get("servingSize"):
+        unit = (data.get("servingSizeUnit") or "g").lower()
+        size = float(data["servingSize"])
+        gram_weight = size * 29.5735 if unit == "ml" else size
+        if gram_weight > 0:
+            portions.append({"label": f"1 serving ({gram_weight:.0f}g)", "grams": gram_weight, "is_piece": False})
+
+    # Sort: whole-item portions first, then by gram weight descending
+    portions.sort(key=lambda p: (not p["is_piece"], -p["grams"]))
+    return portions
+
+
 def get_food_detail(fdc_id: int) -> dict[str, Any]:
-    """Return nutrients per 100g and serving size info for a given fdcId."""
+    """Return nutrients per 100g and available portion options for a given fdcId."""
     resp = requests.get(
         f"{_BASE_URL}/food/{fdc_id}",
         params={"api_key": _api_key()},
@@ -81,27 +129,11 @@ def get_food_detail(fdc_id: int) -> dict[str, Any]:
         if key and amount:
             nutrients[key] = round(float(amount), 4)
 
-    # Serving size: Branded foods expose servingSize directly;
-    # Foundation/SR Legacy expose foodPortions list.
-    serving_g: float | None = None
-    serving_label: str = ""
-    if data.get("servingSize"):
-        unit = data.get("servingSizeUnit", "g").lower()
-        size = float(data["servingSize"])
-        serving_g = size * 29.5735 if unit == "ml" else size
-        serving_label = f"1 serving ({serving_g:.0f}g)"
-    elif data.get("foodPortions"):
-        portion = data["foodPortions"][0]
-        serving_g = float(portion.get("gramWeight", 0)) or None
-        if serving_g:
-            desc = portion.get("modifier") or portion.get("measureUnit", {}).get("name", "serving")
-            amount_val = portion.get("amount", 1)
-            serving_label = f"{amount_val} {desc} ({serving_g:.0f}g)"
+    portions = _extract_portions(data)
 
     return {
         "nutrients_per_100g": nutrients,
-        "serving_g": serving_g,
-        "serving_label": serving_label,
+        "portions": portions,
     }
 
 
