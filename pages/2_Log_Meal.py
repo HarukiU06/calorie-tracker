@@ -10,7 +10,6 @@ from src.ui.css import inject_css
 from src.ui.sidebar import render_sidebar
 from src.ui.theme import INK, MUTED, RULE, RULE_STRONG
 
-st.set_page_config(page_title="Log Meal", layout="wide")
 inject_css()
 render_sidebar()
 
