@@ -3,6 +3,10 @@ import streamlit as st
 from src.db.database import get_session
 from src.db.models import ActivityLevel, Gender, Goal, Profile
 from src.services.bmr import calc_bmr, calc_calorie_target, calc_tdee
+from src.ui.sidebar import render_sidebar
+
+st.set_page_config(page_title="Profile", page_icon="👤", layout="wide")
+render_sidebar()
 
 st.title("Profile")
 

@@ -6,6 +6,10 @@ from sqlalchemy import select
 from src.db.database import get_session
 from src.db.models import MealEntry, MealType
 from src.services.usda import get_food_detail, scale_nutrients, search_foods
+from src.ui.sidebar import render_sidebar
+
+st.set_page_config(page_title="Log Meal", page_icon="🍽️", layout="wide")
+render_sidebar()
 
 st.title("Log Meal")
 
@@ -25,59 +29,56 @@ NUTRIENT_DISPLAY = [
 ]
 
 log_date = st.date_input("Date", value=datetime.date.today())
-
 st.subheader("Search and add food")
 
-# --- real-time suggest ---
-def _do_search(q: str) -> None:
-    if len(q) >= 2 and q != st.session_state.get("last_query"):
+# Session state init
+for key in ("search_results", "food_detail", "selected_food_name", "last_query"):
+    if key not in st.session_state:
+        st.session_state[key] = [] if key == "search_results" else {}  # type: ignore[assignment]
+if "last_query" not in st.session_state:
+    st.session_state.last_query = ""
+if "selected_food_name" not in st.session_state:
+    st.session_state.selected_food_name = ""
+
+query = st.text_input(
+    "Food name",
+    placeholder="Start typing — e.g. egg, banana, chicken breast",
+    key="food_query",
+)
+
+# Auto-search when query changes (min 2 chars)
+if len(query) >= 2 and query != st.session_state.get("last_query"):
+    with st.spinner(""):
         try:
-            st.session_state.search_results = search_foods(q)
-            st.session_state.last_query = q
+            st.session_state.search_results = search_foods(query)
+            st.session_state.last_query = query
             st.session_state.food_detail = {}
             st.session_state.selected_food_name = ""
         except Exception as e:
             st.error(f"Search error: {e}")
+elif len(query) < 2:
+    st.session_state.search_results = []
+    st.session_state.food_detail = {}
+    st.session_state.selected_food_name = ""
+    st.session_state.last_query = ""
 
-
-query = st.text_input(
-    "Food name",
-    placeholder="Type at least 2 characters — e.g. egg, banana, chicken",
-    key="food_query",
-    on_change=lambda: _do_search(st.session_state.food_query),
-)
-
-if len(query) >= 2:
-    _do_search(query)
-
-# --- food selector ---
+# Inline suggestions as buttons
 results: list = st.session_state.get("search_results", [])
+if results and not st.session_state.food_detail:
+    with st.container(border=True):
+        for r in results[:10]:
+            if st.button(r["description"], key=f"pick_{r['fdc_id']}", use_container_width=True):
+                with st.spinner("Fetching nutrients..."):
+                    try:
+                        st.session_state.food_detail = get_food_detail(r["fdc_id"])
+                        st.session_state.selected_food_name = r["description"]
+                        st.session_state.search_results = []
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Fetch error: {e}")
+
+# Log form after food is selected
 food_detail: dict = st.session_state.get("food_detail", {})
-
-if results:
-    options = {r["description"]: r for r in results}
-    prev_selection = st.session_state.get("selected_food_name", "")
-    prev_index = list(options.keys()).index(prev_selection) if prev_selection in options else 0
-
-    chosen_label = st.selectbox(
-        f"Suggestions ({len(results)} found)",
-        list(options.keys()),
-        index=prev_index,
-        key="food_select",
-    )
-    chosen = options[chosen_label]
-
-    # Auto-fetch when selection changes
-    if chosen_label != st.session_state.get("selected_food_name"):
-        with st.spinner("Fetching nutrients..."):
-            try:
-                st.session_state.food_detail = get_food_detail(chosen["fdc_id"])
-                st.session_state.selected_food_name = chosen_label
-                food_detail = st.session_state.food_detail
-            except Exception as e:
-                st.error(f"Fetch error: {e}")
-
-# --- portion input + log form ---
 if food_detail:
     nutrients_100g: dict = food_detail["nutrients_per_100g"]
     portions: list = food_detail.get("portions", [])
@@ -94,42 +95,40 @@ if food_detail:
             format_func=lambda x: MEAL_LABELS[x],
         )
 
-        portion_labels = [p["label"] for p in portions]
-        if portion_labels:
-            mode_options = ["Grams"] + portion_labels
-            input_mode = st.radio("Input by", mode_options, horizontal=True)
-        else:
-            input_mode = "Grams"
+        grams = st.number_input("Grams", min_value=1.0, max_value=2000.0, value=100.0, step=1.0)
 
-        if input_mode == "Grams":
-            grams = st.number_input("Grams", min_value=1.0, max_value=2000.0, value=100.0, step=1.0)
-        else:
-            selected_portion = next(p for p in portions if p["label"] == input_mode)
-            count = st.number_input("Count", min_value=0.5, max_value=50.0, value=1.0, step=0.5)
-            grams = count * selected_portion["grams"]
-            st.caption(f"= {grams:.0f}g")
+        # Portion shortcuts — only shown when meaningful data exists
+        if portions:
+            st.caption("Quick fill:")
+            portion_cols = st.columns(min(len(portions), 4))
+            chosen_grams: float | None = None
+            for i, p in enumerate(portions[:4]):
+                if portion_cols[i].form_submit_button(p["label"]):
+                    chosen_grams = p["grams"]
 
         log_submitted = st.form_submit_button("Add to log", type="primary")
 
-    if log_submitted:
-        scaled = scale_nutrients(nutrients_100g, grams)
+    final_grams = chosen_grams if (portions and chosen_grams) else grams  # type: ignore[possibly-undefined]
+
+    if log_submitted or (portions and chosen_grams):  # type: ignore[possibly-undefined]
+        scaled = scale_nutrients(nutrients_100g, final_grams)
         entry = MealEntry(
             date=log_date,
             meal_type=meal_type,
             food_name=st.session_state.selected_food_name,
-            grams=round(grams, 1),
+            grams=round(final_grams, 1),
             nutrients=scaled,
         )
         with get_session() as session:
             session.add(entry)
             session.commit()
-        st.success(f"Added: {st.session_state.selected_food_name} ({grams:.0f}g)")
-        st.session_state.search_results = []
+        st.success(f"Added: {st.session_state.selected_food_name} ({final_grams:.0f}g)")
         st.session_state.food_detail = {}
+        st.session_state.selected_food_name = ""
         st.session_state.last_query = ""
         st.rerun()
 
-# --- daily log ---
+# Daily log
 st.divider()
 st.subheader(f"Meal log — {log_date}")
 
