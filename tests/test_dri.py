@@ -2,8 +2,6 @@
 
 from types import SimpleNamespace
 
-import pytest
-
 from src.services.dri import get_dri
 
 

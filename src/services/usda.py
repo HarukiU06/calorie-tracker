@@ -36,7 +36,7 @@ _PIECE_KEYWORDS = {"large", "medium", "small", "extra", "whole", "each", "piece"
 def _api_key() -> str:
     key = os.getenv("USDA_API_KEY", "")
     if not key:
-        raise EnvironmentError("USDA_API_KEY is not set in .env.")
+        raise OSError("USDA_API_KEY is not set in .env.")
     return key
 
 

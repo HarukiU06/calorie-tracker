@@ -4,7 +4,7 @@ import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import Date, DateTime, Float, Integer, JSON, String, func
+from sqlalchemy import JSON, Date, DateTime, Float, Integer, String, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 

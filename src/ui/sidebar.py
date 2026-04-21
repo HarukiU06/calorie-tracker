@@ -6,7 +6,7 @@ from sqlalchemy import select
 from src.db.database import get_session
 from src.db.models import MealEntry, Profile
 from src.services.bmr import calc_calorie_target
-from src.ui.theme import ACCENT, BG, INK, MUTED, RULE_STRONG
+from src.ui.theme import ACCENT, INK, MUTED, RULE_STRONG
 
 
 def render_sidebar() -> None:

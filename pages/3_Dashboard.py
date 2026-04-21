@@ -31,7 +31,7 @@ with tb_l:
         st.session_state.dash_date = datetime.date.today()
         st.rerun()
 
-st.markdown(f"<h1 style='margin-top:0.5rem;'>Dashboard</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='margin-top:0.5rem;'>Dashboard</h1>", unsafe_allow_html=True)
 
 # ── Data ──────────────────────────────────────────────────────────────────────
 with get_session() as session:
