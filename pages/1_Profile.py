@@ -141,40 +141,61 @@ with form_col:
     # ── 02 Activity level ──────────────────────────────────────────────────────
     _section_header("02", "Activity level")
 
-    activity_html = ""
+    # Inject scoped CSS to make activity/goal buttons look like styled rows
+    st.html("""
+<style>
+/* Activity row buttons */
+div[data-testid="stButton"].act-row > button {
+  width: 100%;
+  text-align: left !important;
+  padding: 10px 12px !important;
+  border-radius: 2px !important;
+  font-family: 'Inter Tight', sans-serif !important;
+  font-size: 14px !important;
+  height: auto !important;
+  white-space: normal !important;
+  line-height: 1.4 !important;
+}
+/* Goal card buttons */
+div[data-testid="stButton"].goal-card > button {
+  width: 100%;
+  padding: 12px !important;
+  border-radius: 2px !important;
+  text-align: center !important;
+  height: auto !important;
+  white-space: normal !important;
+  line-height: 1.5 !important;
+}
+</style>
+""")
+
     for lvl, (name, desc, factor) in ACTIVITY_DATA.items():
         is_sel = st.session_state.p_activity == lvl
         bg = BG_ALT if is_sel else "transparent"
-        dot_fill = INK if is_sel else "transparent"
-        activity_html += (
-            f"<div data-level='{lvl}' style='display:flex;align-items:center;"
-            f"gap:12px;padding:10px 12px;border:1px solid {RULE_STRONG};"
-            f"background:{bg};margin-bottom:4px;cursor:pointer;"
-            f"border-radius:2px;'>"
-            f"<svg width='14' height='14' viewBox='0 0 14 14'>"
-            f"<circle cx='7' cy='7' r='6' fill='none' stroke='{RULE_STRONG}' stroke-width='1.5'/>"
-            f"<circle cx='7' cy='7' r='3' fill='{dot_fill}'/>"
-            f"</svg>"
-            f"<div style='flex:1;'>"
-            f"<div style='font-family:Inter Tight,sans-serif;font-size:14px;"
-            f"font-weight:500;color:{INK};'>{name}</div>"
-            f"<div style='font-family:Inter,sans-serif;font-size:12px;"
-            f"color:{MUTED};'>{desc}</div>"
-            f"</div>"
-            f"<div style='font-family:JetBrains Mono,monospace;font-size:12px;"
-            f"color:{MUTED};'>{factor}</div>"
-            f"</div>"
-        )
-    st.markdown(f"<div>{activity_html}</div>", unsafe_allow_html=True)
+        border_color = INK if is_sel else RULE_STRONG
+        dot = "●" if is_sel else "○"
 
-    # Actual selectbox hidden behind the styled list (functional fallback)
-    activity_level = st.selectbox(
-        "Activity level",
-        options=list(ACTIVITY_DATA.keys()),
-        format_func=lambda x: ACTIVITY_DATA[x][0],
-        index=list(ACTIVITY_DATA.keys()).index(st.session_state.p_activity),
-        key="p_activity",
-    )
+        label_html = (
+            f"{dot}  **{name}** · {factor}\n\n"
+            f"<span style='font-size:12px;color:{MUTED};'>{desc}</span>"
+        )
+        btn_style = (
+            f"background:{bg} !important;"
+            f"border:1px solid {border_color} !important;"
+            f"color:{INK} !important;"
+            f"margin-bottom:4px;"
+        )
+        st.markdown(
+            f"<style>div[data-testid='stButton']:has(button[data-act='{lvl}']) button"
+            f"{{ {btn_style} }}</style>",
+            unsafe_allow_html=True,
+        )
+        label = f"{dot}  {name}   {factor}\n{desc}"
+        if st.button(label, key=f"act_{lvl}", use_container_width=True):
+            st.session_state.p_activity = lvl
+            st.rerun()
+
+    st.markdown("<div style='margin-bottom:0.5rem;'></div>", unsafe_allow_html=True)
 
     # ── 03 Goal ────────────────────────────────────────────────────────────────
     _section_header("03", "Goal")
@@ -185,20 +206,13 @@ with form_col:
         bg = INK if is_sel else "transparent"
         color = BG if is_sel else INK
         muted_color = BG if is_sel else MUTED
-        border = f"1px solid {INK if is_sel else RULE_STRONG}"
-        col.markdown(
-            f"<div style='padding:12px;background:{bg};border:{border};"
-            f"border-radius:2px;text-align:center;'>"
-            f"<div style='font-family:Inter Tight,sans-serif;font-size:16px;"
-            f"font-weight:500;color:{color};'>{glabel}</div>"
-            f"<div style='font-family:JetBrains Mono,monospace;font-size:12px;"
-            f"color:{muted_color};margin:4px 0 2px;'>{delta}</div>"
-            f"<div style='font-family:Inter,sans-serif;font-size:11px;"
-            f"color:{muted_color};opacity:0.8;'>{consequence}</div>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-        if col.button(glabel, key=f"goal_btn_{g}", use_container_width=True):
+        border_color = INK if is_sel else RULE_STRONG
+        if col.button(
+            f"{glabel}\n{delta}\n{consequence}",
+            key=f"goal_{g}",
+            use_container_width=True,
+            type="primary" if is_sel else "secondary",
+        ):
             st.session_state.p_goal = g
             st.rerun()
 

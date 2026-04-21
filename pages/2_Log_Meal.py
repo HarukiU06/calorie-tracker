@@ -192,6 +192,7 @@ with right_col:
             for i, p in enumerate(portions[:4]):
                 if chip_cols[i].button(p["label"], key=f"chip_{i}"):
                     st.session_state.log_grams = p["grams"]
+                    st.session_state.grams_input = p["grams"]
                     st.rerun()
 
         # Meal type pills
