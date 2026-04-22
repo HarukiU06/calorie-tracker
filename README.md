@@ -12,12 +12,10 @@ A Streamlit-based desktop web app for food search via the USDA FoodData Central 
 
 ## Features
 
-| Phase | Feature |
-|-------|---------|
-| 1 | Profile management (gender, age, height, weight, body fat %, activity level, goal) |
-| 1 | Food search via USDA FoodData Central |
-| 1 | Meal logging (meal type, grams, nutrients) |
-| 1 | Daily dashboard (calories & macros) |
+Profile management (gender, age, height, weight, body fat %, activity level, goal)
+Food search via USDA FoodData Central
+Meal logging (meal type, grams, nutrients)
+ Daily dashboard (calories & macros)
 
 ---
 
@@ -89,7 +87,3 @@ calorie-tracker/
 ```
 
 ---
-
-## License
-
-MIT
