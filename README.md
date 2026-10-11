@@ -87,3 +87,18 @@ calorie-tracker/
 ```
 
 ---
+
+## Security
+
+- The app has **no authentication**. `.streamlit/config.toml` binds the server to
+  `localhost` only — don't expose it to a network without an authenticating reverse proxy.
+- Keep `USDA_API_KEY` in `.env` (git-ignored). The key is sent in the `X-Api-Key`
+  header, never in URLs, and API errors shown in the UI don't include request details.
+- `data.db` contains personal health data; it is git-ignored and created with `0600` permissions.
+- Text from the USDA API and the database is HTML-escaped before it is rendered.
+- Dependabot (`.github/dependabot.yml`) opens weekly dependency update PRs. To audit locally:
+
+  ```bash
+  uv export --format requirements-txt --no-hashes --all-groups > /tmp/req.txt
+  uvx pip-audit -r /tmp/req.txt
+  ```

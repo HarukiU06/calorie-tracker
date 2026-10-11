@@ -4,7 +4,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.services.usda import get_food_detail, search_foods
+from src.services.usda import USDAError, get_food_detail, search_foods
+
+
+@pytest.fixture(autouse=True)
+def _api_key_env(monkeypatch):
+    monkeypatch.setenv("USDA_API_KEY", "DUMMY_KEY")
 
 
 def _mock_response(json_data: dict, status_code: int = 200) -> MagicMock:
@@ -82,14 +87,39 @@ class TestSearchFoods:
         mock_get.return_value = _mock_response(SEARCH_RESPONSE)
         with patch("src.services.usda.os.getenv", return_value="TEST_KEY"):
             search_foods("egg")
-        call_params = mock_get.call_args.kwargs["params"]
-        assert call_params["api_key"] == "TEST_KEY"
+        assert mock_get.call_args.kwargs["headers"]["X-Api-Key"] == "TEST_KEY"
+        assert "api_key" not in mock_get.call_args.kwargs["params"]
+
+    @patch("src.services.usda.requests.get")
+    def test_error_message_does_not_leak_api_key(self, mock_get):
+        from requests import HTTPError
+        mock = _mock_response({}, status_code=403)
+        mock.raise_for_status.side_effect = HTTPError(
+            "403 Client Error for url: https://api.nal.usda.gov/?api_key=SECRET", response=mock
+        )
+        mock_get.return_value = mock
+        with pytest.raises(USDAError) as exc:
+            search_foods("egg")
+        assert "SECRET" not in str(exc.value)
+        assert exc.value.__cause__ is None
+
+    @patch("src.services.usda.requests.get")
+    def test_query_is_truncated(self, mock_get):
+        mock_get.return_value = _mock_response(SEARCH_RESPONSE)
+        search_foods("a" * 1000)
+        assert len(mock_get.call_args.kwargs["params"]["query"]) == 100
+
+    @patch("src.services.usda.requests.get")
+    def test_skips_malformed_results(self, mock_get):
+        mock_get.return_value = _mock_response(
+            {"foods": [{"fdcId": "x", "description": "Bad"}, {"description": "No id"}]}
+        )
+        assert search_foods("egg") == []
 
     @patch("src.services.usda.requests.get")
     def test_raises_on_http_error(self, mock_get):
-        from requests import HTTPError
         mock_get.return_value = _mock_response({}, status_code=429)
-        with pytest.raises(HTTPError):
+        with pytest.raises(USDAError):
             search_foods("egg")
 
 
@@ -139,10 +169,21 @@ class TestGetFoodDetail:
 
     @patch("src.services.usda.requests.get")
     def test_raises_on_404(self, mock_get):
-        from requests import HTTPError
         mock_get.return_value = _mock_response({}, status_code=404)
-        with pytest.raises(HTTPError):
-            get_food_detail(000000)
+        with pytest.raises(USDAError):
+            get_food_detail(1)
+
+    def test_rejects_non_positive_fdc_id(self):
+        with pytest.raises(ValueError):
+            get_food_detail(0)
+
+    @patch("src.services.usda.requests.get")
+    def test_ignores_non_finite_nutrients(self, mock_get):
+        mock_get.return_value = _mock_response(
+            {"foodNutrients": [{"nutrient": {"id": 1008}, "amount": "nan"},
+                               {"nutrient": {"id": 1003}, "amount": "inf"}]}
+        )
+        assert get_food_detail(1)["nutrients_per_100g"] == {}
 
     @patch("src.services.usda.requests.get")
     def test_missing_api_key_raises(self, mock_get):

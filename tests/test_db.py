@@ -160,3 +160,31 @@ class TestMealEntry:
         session.expire(entry)
 
         assert session.get(MealEntry, entry.id).nutrients == {}
+
+
+class TestValidation:
+    def test_rejects_invalid_meal_type(self):
+        with pytest.raises(ValueError):
+            MealEntry(date=datetime.date.today(), meal_type="brunch", food_name="x", grams=1)
+
+    def test_rejects_overlong_food_name(self):
+        with pytest.raises(ValueError):
+            MealEntry(date=datetime.date.today(), meal_type="lunch", food_name="x" * 201, grams=1)
+
+    @pytest.mark.parametrize("grams", [0, -5, float("nan"), float("inf"), 10_000])
+    def test_rejects_bad_grams(self, grams):
+        with pytest.raises(ValueError):
+            MealEntry(date=datetime.date.today(), meal_type="lunch", food_name="x", grams=grams)
+
+    def test_rejects_non_numeric_nutrients(self):
+        with pytest.raises(ValueError):
+            MealEntry(
+                date=datetime.date.today(), meal_type="lunch", food_name="x", grams=1,
+                nutrients={"energy_kcal": "<script>"},
+            )
+
+    def test_rejects_invalid_profile_values(self):
+        with pytest.raises(ValueError):
+            Profile(id=1, gender="other", age=30, height_cm=170.0, weight_kg=60.0)
+        with pytest.raises(ValueError):
+            Profile(id=1, gender="male", age=500, height_cm=170.0, weight_kg=60.0)

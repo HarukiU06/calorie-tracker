@@ -1,3 +1,4 @@
+import math
 import os
 from typing import Any
 
@@ -33,36 +34,87 @@ _VOLUME_KEYWORDS = {"tbsp", "tsp", "tablespoon", "teaspoon", "cup", "ml", "fl", 
 _PIECE_KEYWORDS = {"large", "medium", "small", "extra", "whole", "each", "piece", "item"}
 
 
+# Upper bounds for user/API-supplied values
+MAX_QUERY_LENGTH = 100
+MAX_PAGE_SIZE = 50
+MAX_DESCRIPTION_LENGTH = 200
+
+
+class USDAError(Exception):
+    """Raised for USDA API failures; message is safe to show to users."""
+
+
+class MissingAPIKeyError(USDAError, OSError):
+    pass
+
+
 def _api_key() -> str:
     key = os.getenv("USDA_API_KEY", "")
     if not key:
-        raise OSError("USDA_API_KEY is not set in .env.")
+        raise MissingAPIKeyError("USDA_API_KEY is not set in .env.")
     return key
+
+
+def _get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    # The key goes in a header (not the query string) so it never appears in
+    # request URLs, which end up in exception messages, logs and proxies.
+    headers = {"X-Api-Key": _api_key()}
+    try:
+        resp = requests.get(
+            f"{_BASE_URL}{path}",
+            params=params,
+            headers=headers,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException as e:
+        status = getattr(e.response, "status_code", None)
+        msg = f"USDA API request failed (HTTP {status})." if status else "USDA API request failed."
+        raise USDAError(msg) from None
+    except ValueError:
+        raise USDAError("USDA API returned an invalid response.") from None
+    if not isinstance(data, dict):
+        raise USDAError("USDA API returned an invalid response.")
+    return data
+
+
+def _safe_float(value: Any) -> float:
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return f if math.isfinite(f) else 0.0
 
 
 def search_foods(query: str, page_size: int = 20) -> list[dict[str, Any]]:
     """Search foods and return deduplicated candidates."""
-    resp = requests.get(
-        f"{_BASE_URL}/foods/search",
-        params={
+    query = query.strip()[:MAX_QUERY_LENGTH]
+    if not query:
+        return []
+    page_size = max(1, min(int(page_size), MAX_PAGE_SIZE))
+    data = _get(
+        "/foods/search",
+        {
             "query": query,
             "pageSize": page_size,
             "dataType": "Foundation,SR Legacy,Branded",
-            "api_key": _api_key(),
         },
-        timeout=10,
     )
-    resp.raise_for_status()
-    foods = resp.json().get("foods", [])
+    foods = data.get("foods") or []
 
     seen: set[str] = set()
     results: list[dict[str, Any]] = []
     for f in foods:
-        desc = f["description"].strip()
-        if desc not in seen:
+        try:
+            fdc_id = int(f["fdcId"])
+            desc = str(f["description"]).strip()[:MAX_DESCRIPTION_LENGTH]
+        except (KeyError, TypeError, ValueError):
+            continue
+        if desc and desc not in seen:
             seen.add(desc)
             results.append({
-                "fdc_id": f["fdcId"],
+                "fdc_id": fdc_id,
                 "description": desc,
                 "data_type": f.get("dataType", ""),
             })
@@ -75,7 +127,7 @@ def _extract_portions(data: dict[str, Any]) -> list[dict[str, Any]]:
 
     # Foundation / SR Legacy — foodPortions list
     for p in data.get("foodPortions", []):
-        gram_weight = float(p.get("gramWeight") or 0)
+        gram_weight = _safe_float(p.get("gramWeight"))
         if gram_weight <= 0:
             continue
         modifier: str = (p.get("modifier") or "").lower()
@@ -101,7 +153,7 @@ def _extract_portions(data: dict[str, Any]) -> list[dict[str, Any]]:
     # Branded — single servingSize field
     if not portions and data.get("servingSize"):
         unit = (data.get("servingSizeUnit") or "g").lower()
-        size = float(data["servingSize"])
+        size = _safe_float(data["servingSize"])
         gram_weight = size * 29.5735 if unit == "ml" else size
         if gram_weight > 0:
             portions.append({"label": f"1 serving ({gram_weight:.0f}g)", "grams": gram_weight, "is_piece": False})
@@ -113,21 +165,22 @@ def _extract_portions(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 def get_food_detail(fdc_id: int) -> dict[str, Any]:
     """Return nutrients per 100g and available portion options for a given fdcId."""
-    resp = requests.get(
-        f"{_BASE_URL}/food/{fdc_id}",
-        params={"api_key": _api_key()},
-        timeout=10,
-    )
-    resp.raise_for_status()
-    data = resp.json()
+    fdc_id = int(fdc_id)
+    if fdc_id <= 0:
+        raise ValueError("fdc_id must be a positive integer.")
+    data = _get(f"/food/{fdc_id}")
 
     nutrients: dict[str, float] = {}
     for n in data.get("foodNutrients", []):
         nutrient_id = (n.get("nutrient") or {}).get("id") or n.get("nutrientId")
         amount = n.get("amount") if n.get("amount") is not None else n.get("value") or 0.0
-        key = _NUTRIENT_ID_MAP.get(int(nutrient_id)) if nutrient_id else None
-        if key and amount:
-            nutrients[key] = round(float(amount), 4)
+        try:
+            key = _NUTRIENT_ID_MAP.get(int(nutrient_id)) if nutrient_id else None
+        except (TypeError, ValueError):
+            continue
+        amount = _safe_float(amount)
+        if key and amount > 0:
+            nutrients[key] = round(amount, 4)
 
     portions = _extract_portions(data)
 
