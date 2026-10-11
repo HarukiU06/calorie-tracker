@@ -9,6 +9,7 @@ from src.db.models import MealEntry, MealType, Profile
 from src.services.bmr import calc_calorie_target
 from src.services.dri import get_dri
 from src.ui.css import inject_css
+from src.ui.safe import esc
 from src.ui.sidebar import render_sidebar
 from src.ui.theme import ACCENT, BG, INK, MUTED, RULE, RULE_STRONG
 
@@ -166,7 +167,7 @@ for meal_type in MEAL_ORDER:
     if meal_entries:
         items_html = "".join(
             f"<div style='padding:2px 0;font-family:Inter,sans-serif;font-size:14px;color:{INK};'>"
-            f"{e.food_name} "
+            f"{esc(e.food_name)} "
             f"<span style='font-family:JetBrains Mono,monospace;font-size:12px;color:{MUTED};'>"
             f"({e.grams:.0f}g)</span></div>"
             for e in meal_entries

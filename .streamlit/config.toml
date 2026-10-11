@@ -1,6 +1,25 @@
 [browser]
 gatherUsageStats = false
 
+[server]
+# Only listen on the loopback interface. The app has no authentication and
+# stores personal health data, so it must not be reachable from the network.
+# Put an authenticating reverse proxy in front before changing this.
+address = "localhost"
+headless = true
+enableCORS = true
+enableXsrfProtection = true
+enableStaticServing = false
+# The app has no file uploads
+maxUploadSize = 1
+runOnSave = false
+
+[client]
+# Don't expose stack traces / source paths to the browser
+showErrorDetails = "none"
+showErrorLinks = false
+toolbarMode = "viewer"
+
 [theme]
 base = "light"
 backgroundColor = "#f7f5f0"

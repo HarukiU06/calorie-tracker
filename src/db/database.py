@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from sqlalchemy import create_engine
@@ -11,6 +12,9 @@ SessionLocal: sessionmaker[Session] = sessionmaker(bind=ENGINE, autoflush=False,
 
 
 def init_db() -> None:
+    # The DB holds personal health data; keep it readable by the owner only.
+    DB_PATH.touch(mode=0o600, exist_ok=True)
+    os.chmod(DB_PATH, 0o600)
     Base.metadata.create_all(ENGINE)
 
 

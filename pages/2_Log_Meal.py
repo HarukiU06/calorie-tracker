@@ -5,8 +5,15 @@ from sqlalchemy import select
 
 from src.db.database import get_session
 from src.db.models import MealEntry, MealType
-from src.services.usda import get_food_detail, scale_nutrients, search_foods
+from src.services.usda import (
+    MAX_QUERY_LENGTH,
+    USDAError,
+    get_food_detail,
+    scale_nutrients,
+    search_foods,
+)
 from src.ui.css import inject_css
+from src.ui.safe import esc, md_escape
 from src.ui.sidebar import render_sidebar
 from src.ui.theme import INK, MUTED, RULE, RULE_STRONG
 
@@ -51,7 +58,7 @@ with left_col:
 
     query = st.text_input(
         "Food name", placeholder="e.g. egg, banana, chicken breast",
-        label_visibility="collapsed", key="food_query",
+        label_visibility="collapsed", key="food_query", max_chars=MAX_QUERY_LENGTH,
     )
 
     # Auto-search
@@ -61,8 +68,10 @@ with left_col:
             st.session_state.last_query = query
             st.session_state.food_detail = {}
             st.session_state.selected_food_name = ""
-        except Exception as e:
+        except USDAError as e:
             st.error(f"Search error: {e}")
+        except Exception:
+            st.error("Search failed.")
     elif len(query) < 2:
         st.session_state.search_results = []
         st.session_state.food_detail = {}
@@ -87,7 +96,7 @@ with left_col:
                 border = f"1px solid {RULE_STRONG}"
 
                 if st.button(
-                    r["description"],
+                    md_escape(r["description"]),
                     key=f"pick_{r['fdc_id']}",
                     use_container_width=True,
                 ):
@@ -98,8 +107,10 @@ with left_col:
                             st.session_state.selected_fdc_id = r["fdc_id"]
                             st.session_state.log_grams = 100.0
                             st.rerun()
-                        except Exception as e:
+                        except USDAError as e:
                             st.error(f"Fetch error: {e}")
+                        except Exception:
+                            st.error("Could not load food.")
 
     # Today's log (compact)
     st.markdown(f"<hr style='border-top:1px solid {RULE};margin:1.5rem 0 1rem;'>", unsafe_allow_html=True)
@@ -132,7 +143,7 @@ with left_col:
                 f"<div style='display:flex;justify-content:space-between;"
                 f"font-family:JetBrains Mono,monospace;font-size:12px;"
                 f"color:{MUTED};padding:3px 0;border-bottom:1px solid {RULE};'>"
-                f"<span><b style='color:{INK};'>{initial}</b> {e.food_name}</span>"
+                f"<span><b style='color:{INK};'>{initial}</b> {esc(e.food_name)}</span>"
                 f"<span>{kcal:.0f} kcal</span></div>"
             )
         st.markdown(f"<div>{log_html}</div>", unsafe_allow_html=True)
@@ -160,7 +171,7 @@ with right_col:
             f"margin-bottom:4px;'>Selected</div>"
             f"<div style='font-family:Inter Tight,sans-serif;font-size:20px;"
             f"font-weight:500;color:{INK};letter-spacing:-0.4px;margin-bottom:4px;'>"
-            f"{st.session_state.selected_food_name}</div>"
+            f"{esc(st.session_state.selected_food_name)}</div>"
             f"<div style='font-family:JetBrains Mono,monospace;font-size:11px;"
             f"color:{MUTED};margin-bottom:1.25rem;'>FDC #{fdc_id}</div>",
             unsafe_allow_html=True,
@@ -190,7 +201,7 @@ with right_col:
             )
             chip_cols = st.columns(min(len(portions), 4))
             for i, p in enumerate(portions[:4]):
-                if chip_cols[i].button(p["label"], key=f"chip_{i}"):
+                if chip_cols[i].button(md_escape(p["label"]), key=f"chip_{i}"):
                     st.session_state.log_grams = p["grams"]
                     st.session_state.grams_input = p["grams"]
                     st.rerun()
@@ -259,7 +270,7 @@ with right_col:
             with get_session() as session:
                 session.add(entry)
                 session.commit()
-            st.success(f"Added {st.session_state.selected_food_name} ({grams:.0f}g)")
+            st.success(f"Added {md_escape(st.session_state.selected_food_name)} ({grams:.0f}g)")
             st.session_state.food_detail = {}
             st.session_state.selected_food_name = ""
             st.session_state.last_query = ""
